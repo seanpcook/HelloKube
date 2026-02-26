@@ -9,7 +9,7 @@ requests_total = Counter("requests_total", "Total HTTP requests")
 @app.get("/")
 def root():
     requests_total.inc()
-    return {"message": "HelloKube says hi 👋"}
+    return {"message": "HelloKube says goodbye 👋"}
 
 @app.get("/healthz")
 def healthz():
