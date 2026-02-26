@@ -1,56 +1,56 @@
 name: Build and Deploy to AKS
 
 on:
-    push:
-        branches: ["main"]
+  push:
+    branches: ["main"]
 
 permissions:
-    contents: read
+  contents: read
 
 jobs:
-    build-and-deploy:
-        runs-on: ubuntu-latest
+  build-and-deploy:
+    runs-on: ubuntu-latest
 
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-            - name: Azure Login
-              uses: azure/login@v2
-              with:
-                  creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-            - name: ACR Login
-              run: az acr login --name "${{ secrets.ACR_NAME }}"
+      - name: ACR Login
+        run: az acr login --name "${{ vars.ACR_NAME }}"
 
-            - name: Build and Push Image
-              env:
-                  ACR_NAME: ${{ secrets.ACR_NAME }}
-                  SHA: ${{ github.sha }}
-              run: |
-                  ACR_LOGIN_SERVER=$(az acr show -n "$ACR_NAME" --query loginServer -o tsv)
-                  IMAGE="$ACR_LOGIN_SERVER/hellokube-app:$SHA"
-                  docker build -t "$IMAGE" ./apps/hellokube-app
-                  docker push "$IMAGE"
-                  echo "IMAGE_REPO=$ACR_LOGIN_SERVER/hellokube-app" >> $GITHUB_ENV
-                  echo "IMAGE_TAG=$SHA" >> $GITHUB_ENV
+      - name: Build and Push Image
+        env:
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          SHA: ${{ github.sha }}
+        run: |
+          ACR_LOGIN_SERVER=$(az acr show -n "$ACR_NAME" --query loginServer -o tsv)
+          IMAGE="$ACR_LOGIN_SERVER/hellokube-app:$SHA"
+          docker build -t "$IMAGE" ./apps/hellokube-app
+          docker push "$IMAGE"
+          echo "IMAGE_REPO=$ACR_LOGIN_SERVER/hellokube-app" >> $GITHUB_ENV
+          echo "IMAGE_TAG=$SHA" >> $GITHUB_ENV
 
-            - name: Set AKS Context
-              uses: azure/aks-set-context@v4
-              with:
-                  resource-group: ${{ secrets.AKS_RESOURCE_GROUP }}
-                  cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
+      - name: Set AKS Context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ vars.AKS_RESOURCE_GROUP }}
+          cluster-name: ${{ vars.AKS_CLUSTER_NAME }}
 
-            - name: Install Helm
-              uses: azure/setup-helm@v4
+      - name: Install Helm
+        uses: azure/setup-helm@v4
 
-            - name: Deploy with Helm
-              env:
-                  IMAGE_REPO: ${{ env.IMAGE_REPO }}
-                  IMAGE_TAG: ${{ env.IMAGE_TAG }}
-              run: |
-                  kubectl create namespace apps --dry-run=client -o yaml | kubectl apply -f -
-                  helm upgrade --install hellokube ./apps/helm/hellokube \
-                    --namespace apps \
-                    --set image.repository="$IMAGE_REPO" \
-                    --set image.tag="$IMAGE_TAG"
+      - name: Deploy with Helm
+        env:
+          IMAGE_REPO: ${{ env.IMAGE_REPO }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          kubectl create namespace apps --dry-run=client -o yaml | kubectl apply -f -
+          helm upgrade --install hellokube ./apps/helm/hellokube \
+            --namespace apps \
+            --set image.repository="$IMAGE_REPO" \
+            --set image.tag="$IMAGE_TAG"
