@@ -1,5 +1,13 @@
 terraform {
   required_version = ">= 1.5.0"
+
+    backend "azurerm" {
+    resource_group_name  = "rg-hellokube-tfstate"
+    storage_account_name = "sthellokubec467d49b"
+    container_name       = "tfstate"
+    key                  = "hellokube-dev.tfstate"
+  }
+
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
@@ -9,6 +17,14 @@ terraform {
       source  = "hashicorp/random"
       version = ">= 3.5.0"
     }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.25"
+    }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 2.17"
+    }
   }
 }
 
@@ -17,8 +33,8 @@ provider "azurerm" {
 }
 
 locals {
-  name     = "hellokube-dev"
-  location = "eastus"
+  name     = var.name
+  location = var.location
 }
 
 # 1) Resource Group: a logical container for everything
@@ -67,9 +83,12 @@ resource "azurerm_kubernetes_cluster" "aks" {
 
   default_node_pool {
     name           = "system"
-    node_count     = 2
-    vm_size        = "Standard_B2s"
+    node_count     = var.node_count
+    vm_size        = var.node_vm_size
     vnet_subnet_id = azurerm_subnet.subnet.id
+    upgrade_settings {
+      max_surge = "10%"
+    }
   }
 
   # AKS uses an Azure identity to interact with other Azure resources
@@ -79,6 +98,40 @@ resource "azurerm_kubernetes_cluster" "aks" {
 
   network_profile {
     network_plugin = "azure"
+  }
+}
+
+provider "kubernetes" {
+  host                   = azurerm_kubernetes_cluster.aks.kube_config[0].host
+  client_certificate     = base64decode(azurerm_kubernetes_cluster.aks.kube_config[0].client_certificate)
+  client_key             = base64decode(azurerm_kubernetes_cluster.aks.kube_config[0].client_key)
+  cluster_ca_certificate = base64decode(azurerm_kubernetes_cluster.aks.kube_config[0].cluster_ca_certificate)
+}
+
+provider "helm" {
+  kubernetes {
+    host                   = azurerm_kubernetes_cluster.aks.kube_config[0].host
+    client_certificate     = base64decode(azurerm_kubernetes_cluster.aks.kube_config[0].client_certificate)
+    client_key             = base64decode(azurerm_kubernetes_cluster.aks.kube_config[0].client_key)
+    cluster_ca_certificate = base64decode(azurerm_kubernetes_cluster.aks.kube_config[0].cluster_ca_certificate)
+  }
+}
+
+resource "kubernetes_namespace_v1" "ingress" {
+  metadata {
+    name = "ingress-nginx"
+  }
+}
+
+resource "helm_release" "ingress_nginx" {
+  name       = "ingress-nginx"
+  repository = "https://kubernetes.github.io/ingress-nginx"
+  chart      = "ingress-nginx"
+  namespace  = kubernetes_namespace_v1.ingress.metadata[0].name
+
+  set {
+    name  = "controller.service.type"
+    value = "LoadBalancer"
   }
 }
 
