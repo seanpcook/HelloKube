@@ -1,0 +1,2 @@
+# Ignore Helm templates (they’re YAML + Go templates)
+apps/helm/**/templates/**
